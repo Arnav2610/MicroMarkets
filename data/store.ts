@@ -6,6 +6,7 @@
  */
 
 import * as api from "@/lib/api";
+import { recordTradeOnChain } from "@/lib/ledgerApi";
 import { saveToStorage, type PersistedState } from "@/lib/backend";
 
 export interface User {
@@ -377,6 +378,7 @@ export async function addToPool(
     setBalanceCache(userId, (balanceCache[userId] ?? 0) - cost);
     appendTradeToMarket(market, userId, side, cost);
     void persist();
+    void recordTradeOnChain(market.marketId, side, cost).catch(() => {});
     return true;
   } catch {
     return false;

@@ -1,0 +1,14 @@
+{
+  "users": [
+    {
+      "id": "alice",
+      "name": "alice"
+    }
+  ],
+  "groups": [],
+  "markets": [],
+  "balanceCache": {
+    "alice": 100
+  },
+  "marketIdCounter": 1771759128
+}
