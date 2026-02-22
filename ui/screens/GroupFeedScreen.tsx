@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useCallback } from "react";
 import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import { useLayout } from "@/hooks/useLayout";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -13,13 +14,28 @@ import {
   getGroupById,
   getYesOdds,
   getNoOdds,
+  hydrateStore,
+  getOrCreateUser,
 } from "@/data/store";
+import { refreshFromServer } from "@/lib/backend";
 
 export function GroupFeedScreen() {
   const router = useRouter();
   const layout = useLayout();
   const { user } = useAuth();
   useStoreRefresh(); // Re-render when store changes (new markets, trades, etc.)
+
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        const state = await refreshFromServer();
+        if (state) {
+          hydrateStore(state);
+          if (user?.id) getOrCreateUser(user.id);
+        }
+      })();
+    }, [user?.id])
+  );
 
   const markets = user ? getActiveMarketsForUser(user.id) : [];
   const groupMap = new Map(markets.map((m) => [m.groupId, getGroupById(m.groupId)]));

@@ -1,27 +1,29 @@
-import React, { useState } from "react";
-import { useLayout } from "@/hooks/useLayout";
-import {
-  View,
-  Text,
-  Pressable,
-  StyleSheet,
-  ScrollView,
-  TextInput,
-  Modal,
-  Alert,
-} from "react-native";
-import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
-import { BottomNav } from "../components/BottomNav";
 import { useAuth } from "@/context/AuthContext";
 import { useStoreRefresh } from "@/context/StoreContext";
 import {
-  getGroupsByUser,
   createGroup,
+  getGroupsByUser,
+  getOrCreateUser,
+  hydrateStore,
   joinGroup,
-  getUserBalance,
 } from "@/data/store";
+import { useLayout } from "@/hooks/useLayout";
+import { refreshFromServer } from "@/lib/backend";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
+import React, { useState } from "react";
+import {
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { BottomNav } from "../components/BottomNav";
 
 export function GroupsScreen() {
   const router = useRouter();
@@ -54,12 +56,18 @@ export function GroupsScreen() {
     setShowCreate(false);
   };
 
-  const handleJoinGroup = () => {
+  const handleJoinGroup = async () => {
     if (!user) return;
     const code = joinCode.trim().toUpperCase();
     if (!code) {
       Alert.alert("Error", "Enter a join code");
       return;
+    }
+    // Fetch latest from server so we see groups created on other devices
+    const serverState = await refreshFromServer();
+    if (serverState) {
+      hydrateStore(serverState);
+      getOrCreateUser(user.id);
     }
     const group = joinGroup(code, user.id);
     if (group) {
@@ -141,7 +149,10 @@ export function GroupsScreen() {
       {/* Create Group Modal */}
       <Modal visible={showCreate} transparent animationType="fade">
         <Pressable style={[styles.modalOverlay, { padding: layout.paddingH * 2 }]} onPress={() => setShowCreate(false)}>
-          <Pressable style={[styles.modalContent, { maxWidth: layout.width * 0.9 }]} onPress={(e) => e.stopPropagation()}>
+          <Pressable
+            style={[styles.modalContent, { maxWidth: layout.width * 0.9, marginBottom: layout.height * 0.25 }]}
+            onPress={(e) => e.stopPropagation()}
+          >
             <Text style={styles.modalTitle}>Create Group</Text>
             <Text style={styles.modalLabel}>Group Name</Text>
             <TextInput
@@ -185,7 +196,10 @@ export function GroupsScreen() {
       {/* Join Group Modal */}
       <Modal visible={showJoin} transparent animationType="fade">
         <Pressable style={[styles.modalOverlay, { padding: layout.paddingH * 2 }]} onPress={() => setShowJoin(false)}>
-          <Pressable style={[styles.modalContent, { maxWidth: layout.width * 0.9 }]} onPress={(e) => e.stopPropagation()}>
+          <Pressable
+            style={[styles.modalContent, { maxWidth: layout.width * 0.9, marginBottom: layout.height * 0.15 }]}
+            onPress={(e) => e.stopPropagation()}
+          >
             <Text style={styles.modalTitle}>Join Group</Text>
             <Text style={styles.modalLabel}>Join Code</Text>
             <TextInput

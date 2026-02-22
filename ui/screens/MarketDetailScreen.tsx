@@ -10,15 +10,21 @@ import {
   getUserBalance,
   getUserById,
   getYesOdds,
+  hydrateStore,
+  getOrCreateUser,
+  refreshMarket,
   resolveMarket,
 } from "@/data/store";
+import { refreshFromServer } from "@/lib/backend";
 import { useLayout } from "@/hooks/useLayout";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import React, { useCallback, useState } from "react";
 import {
   Alert,
+  Keyboard,
   Modal,
   Pressable,
   ScrollView,
@@ -37,7 +43,7 @@ function formatTransactionTime(timestamp: number): string {
   if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`;
   return `${Math.floor(diff / 86400_000)}d ago`;
 }
-
+// ZUNFTM
 export function MarketDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -49,6 +55,20 @@ export function MarketDetailScreen() {
   const [resolveOutcome, setResolveOutcome] = useState<"YES" | "NO" | null>(null);
   const [refresh, setRefresh] = useState(0);
   useStoreRefresh();
+
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        const state = await refreshFromServer();
+        if (state) {
+          hydrateStore(state);
+          if (user?.id) getOrCreateUser(user.id);
+        }
+        const m = getMarketById(id || "");
+        if (m) void refreshMarket(m.marketId);
+      })();
+    }, [id, user?.id])
+  );
 
   const market = getMarketById(id || "");
   const group = market ? getGroupById(market.groupId) : undefined;
@@ -305,11 +325,15 @@ export function MarketDetailScreen() {
         <Pressable
           style={styles.modalOverlay}
           onPress={() => {
+            Keyboard.dismiss();
             setTradeModal(null);
             setTradeAmount("");
           }}
         >
-          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+          <Pressable
+            style={[styles.modalContent, { marginBottom: layout.height * 0.2 }]}
+            onPress={(e) => e.stopPropagation()}
+          >
             <Text style={styles.modalTitle}>
               Add to {tradeModal?.includes("yes") ? "YES" : "NO"}
             </Text>
@@ -361,6 +385,7 @@ export function MarketDetailScreen() {
             <View style={styles.modalActions}>
               <Pressable
                 onPress={() => {
+                  Keyboard.dismiss();
                   setTradeModal(null);
                   setTradeAmount("");
                 }}

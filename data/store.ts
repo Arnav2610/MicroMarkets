@@ -292,7 +292,7 @@ export async function createMarket(
   markets.push(market);
   // Deduct stake from creator's balance
   setBalanceCache(email, (balanceCache[email] ?? 0) - totalStake);
-  void persist();
+  await persist();
   return market;
 }
 
@@ -407,7 +407,8 @@ export async function resolveMarket(
           setBalanceCache(userId, (balanceCache[userId] ?? 0) + payout);
         }
       }
-      void persist();
+      notifyStoreChange();
+      await persist();
     }
     return true;
   } catch {
@@ -478,8 +479,18 @@ export async function refreshMarket(marketId: number): Promise<Market | null> {
       priceHistory,
       transactions
     );
+    // Preserve question, pools, resolved state from existing market (API stub returns empty/zeros)
+    updated.question = market.question || updated.question;
+    updated.yesPool = market.yesPool;
+    updated.noPool = market.noPool;
+    updated.positions = market.positions;
+    updated.resolved = market.resolved;
+    updated.outcome = market.outcome;
+    updated.transactions = market.transactions;
+    updated.priceHistory = market.priceHistory ?? updated.priceHistory;
     const idx = markets.findIndex((m) => m.marketId === marketId);
     if (idx >= 0) markets[idx] = updated;
+    notifyStoreChange();
     return updated;
   } catch {
     return null;

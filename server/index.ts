@@ -1,6 +1,7 @@
 /**
  * MicroMarkets Ledger Server
  * Submits trades to Solana for on-chain transparency.
+ * Also provides shared state API for multi-device demo (groups, users, markets).
  *
  * Run: npx tsx index.ts
  * Env: SOLANA_KEYPAIR_PATH or SOLANA_KEYPAIR_BASE58, PORT (default 3001)
@@ -18,6 +19,29 @@ import * as anchor from "@coral-xyz/anchor";
 import BN from "bn.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// --- Shared state for multi-device demo (in-memory) ---
+interface PersistedState {
+  users: Array<{ id: string; name: string; pubkey?: string }>;
+  groups: Array<{
+    id: string;
+    name: string;
+    joinCode: string;
+    baseBuyIn: number;
+    members: string[];
+  }>;
+  markets: unknown[];
+  balanceCache: Record<string, number>;
+  marketIdCounter: number;
+}
+
+let sharedState: PersistedState = {
+  users: [],
+  groups: [],
+  markets: [],
+  balanceCache: {},
+  marketIdCounter: Math.floor(Date.now() / 1000),
+};
 
 const PROGRAM_ID = new PublicKey("dEHBSkV1rDmC4Uc5AL9CRNeaTaq8Lq44tbfYasWX2qF");
 const RPC_URL = process.env.SOLANA_RPC_URL || "https://api.devnet.solana.com";
@@ -88,6 +112,28 @@ app.post("/record-trade", async (req, res) => {
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
+});
+
+// --- Shared state API (multi-device demo) ---
+app.get("/api/state", (_req, res) => {
+  res.json(sharedState);
+});
+
+app.post("/api/state", (req, res) => {
+  const body = req.body as PersistedState;
+  if (
+    body &&
+    Array.isArray(body.users) &&
+    Array.isArray(body.groups) &&
+    Array.isArray(body.markets) &&
+    typeof body.balanceCache === "object" &&
+    typeof body.marketIdCounter === "number"
+  ) {
+    sharedState = body;
+    res.json({ ok: true });
+  } else {
+    res.status(400).json({ error: "Invalid state payload" });
+  }
 });
 
 const PORT = process.env.PORT || 3001;

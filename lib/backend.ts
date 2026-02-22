@@ -1,10 +1,11 @@
 /**
  * Local backend - persists store data to AsyncStorage.
- * Users are identified by name. Data survives app refresh.
+ * When EXPO_PUBLIC_LEDGER_API_URL is set, also syncs with server for multi-device demo.
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { User, Group, Market } from "@/data/store";
+import { fetchStateFromServer, pushStateToServer } from "@/lib/syncApi";
 
 const STORAGE_KEY = "@micromarkets/data";
 const LAST_USER_KEY = "@micromarkets/lastUser";
@@ -17,22 +18,38 @@ export interface PersistedState {
   marketIdCounter: number;
 }
 
+/** Load state: try server first (for multi-device), else local AsyncStorage */
 export async function loadFromStorage(): Promise<PersistedState | null> {
   try {
+    const serverState = await fetchStateFromServer();
+    if (serverState) return serverState;
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     return JSON.parse(raw) as PersistedState;
   } catch {
-    return null;
+    try {
+      const raw = await AsyncStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw) as PersistedState;
+    } catch {
+      return null;
+    }
   }
 }
 
+/** Save state to local storage and push to server (for multi-device sync) */
 export async function saveToStorage(state: PersistedState): Promise<void> {
   try {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    await pushStateToServer(state);
   } catch {
     // ignore save errors
   }
+}
+
+/** Fetch latest state from server (call before join to get groups created on other devices) */
+export async function refreshFromServer(): Promise<PersistedState | null> {
+  return fetchStateFromServer();
 }
 
 export async function loadLastUser(): Promise<string | null> {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -22,7 +22,10 @@ import {
   getUserById,
   getYesOdds,
   getNoOdds,
+  hydrateStore,
+  getOrCreateUser,
 } from "@/data/store";
+import { refreshFromServer } from "@/lib/backend";
 
 type Tab = "leaderboard" | "active" | "past";
 
@@ -40,9 +43,16 @@ export function GroupDetailScreen() {
   const [leaderboard, setLeaderboard] = useState<{ userId: string; balance: number }[]>([]);
 
   useFocusEffect(
-    React.useCallback(() => {
-      if (id) setLeaderboard(getGroupLeaderboard(id));
-    }, [id])
+    useCallback(() => {
+      (async () => {
+        const state = await refreshFromServer();
+        if (state) {
+          hydrateStore(state);
+          if (user?.id) getOrCreateUser(user.id);
+        }
+        if (id) setLeaderboard(getGroupLeaderboard(id));
+      })();
+    }, [id, user?.id])
   );
 
   if (!group) {

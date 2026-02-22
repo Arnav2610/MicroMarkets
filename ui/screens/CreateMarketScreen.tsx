@@ -8,9 +8,9 @@ import {
 import { useLayout } from "@/hooks/useLayout";
 import Slider from "@react-native-community/slider";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useMemo, useState } from "react";
-import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
+import React, { useEffect, useMemo, useState } from "react";
+import { Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { BottomNav } from "../components/BottomNav";
 
 export function CreateMarketScreen() {
@@ -103,14 +103,26 @@ export function CreateMarketScreen() {
         <Text style={styles.title}>Create Market</Text>
       </View>
 
-      {/* Form - not scrollable */}
+      {/* Form - not scrollable, KeyboardAvoidingView shifts content when input focused */}
       <KeyboardAvoidingView
         style={styles.formWrapper}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={0}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={layout.headerPaddingTop + 60}
       >
-        <View style={[styles.form, { paddingHorizontal: createLayout.paddingH, paddingTop: 8, paddingBottom: createLayout.btnPaddingBottom, flex: 1, justifyContent: "space-between" }]}>
-          <View style={[styles.formFields, { gap: createLayout.formGap }]}>
+        <View
+          style={[
+            styles.form,
+            styles.formFields,
+            {
+              paddingHorizontal: createLayout.paddingH,
+              paddingTop: 8,
+              paddingBottom: createLayout.btnPaddingBottom,
+              flex: 1,
+              justifyContent: "space-between",
+              gap: createLayout.formGap,
+            },
+          ]}
+        >
           {/* Group dropdown - opens modal to prevent layout shift */}
           <View style={[styles.field, { gap: createLayout.fieldGap }]}>
             <Text style={styles.label}>Group</Text>
@@ -196,6 +208,9 @@ export function CreateMarketScreen() {
                 placeholderTextColor="#6b7280"
                 multiline
                 numberOfLines={4}
+                returnKeyType="done"
+                blurOnSubmit={true}
+                onSubmitEditing={() => Keyboard.dismiss()}
                 style={[
                   styles.textArea,
                   {
@@ -205,6 +220,35 @@ export function CreateMarketScreen() {
                   },
                 ]}
               />
+            </View>
+
+            <View style={[styles.field, { gap: createLayout.fieldGap }]}>
+              <View style={styles.liquidityHeader}>
+                <Text style={styles.label}>Initial Market Liquidity (Your Stake)</Text>
+                {selectedGroup && user && (
+                  <Text style={styles.balanceDisplay}>
+                    Balance: ${getUserBalance(user.id, selectedGroup.id)}
+                  </Text>
+                )}
+              </View>
+              <TextInput
+                value={stake}
+                onChangeText={setStake}
+                placeholder="10"
+                placeholderTextColor="#6b7280"
+                keyboardType="numeric"
+                returnKeyType="done"
+                style={[
+                  styles.input,
+                  {
+                    padding: createLayout.inputPadding,
+                    borderRadius: createLayout.borderRadius,
+                  },
+                ]}
+              />
+              <Text style={[styles.liquidityCaption, { marginTop: createLayout.captionMarginT }]}>
+                Split between YES and NO pools based on probability above.
+              </Text>
             </View>
 
             <View style={[styles.field, { gap: createLayout.fieldGap }]}>
@@ -225,35 +269,6 @@ export function CreateMarketScreen() {
                 thumbTintColor="#fff"
               />
             </View>
-
-            <View style={[styles.field, { gap: createLayout.fieldGap }]}>
-              <View style={styles.liquidityHeader}>
-                <Text style={styles.label}>Initial Market Liquidity (Your Stake)</Text>
-                {selectedGroup && user && (
-                  <Text style={styles.balanceDisplay}>
-                    Balance: ${getUserBalance(user.id, selectedGroup.id)}
-                  </Text>
-                )}
-              </View>
-              <TextInput
-                value={stake}
-                onChangeText={setStake}
-                placeholder="10"
-                placeholderTextColor="#6b7280"
-                keyboardType="numeric"
-                style={[
-                  styles.input,
-                  {
-                    padding: createLayout.inputPadding,
-                    borderRadius: createLayout.borderRadius,
-                  },
-                ]}
-              />
-              <Text style={[styles.liquidityCaption, { marginTop: createLayout.captionMarginT }]}>
-                Split between YES and NO pools based on probability above.
-              </Text>
-            </View>
-          </View>
 
           <Pressable
             onPress={handleCreate}
@@ -288,6 +303,7 @@ const styles = StyleSheet.create({
   formWrapper: { flex: 1 },
   title: { fontSize: 24, color: "#fff", fontWeight: "bold" },
   form: {},
+  formScroll: { flex: 1 },
   formFields: {},
   field: {},
   label: { color: "#fff", fontWeight: "600", fontSize: 16 },
