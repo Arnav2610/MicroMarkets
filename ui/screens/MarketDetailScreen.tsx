@@ -56,18 +56,22 @@ export function MarketDetailScreen() {
   const [refresh, setRefresh] = useState(0);
   useStoreRefresh();
 
+  const refreshMarketData = useCallback(async () => {
+    const state = await refreshFromServer();
+    if (state) {
+      hydrateStore(state);
+      if (user?.id) getOrCreateUser(user.id);
+    }
+    const m = getMarketById(id || "");
+    if (m) void refreshMarket(m.marketId);
+  }, [id, user?.id]);
+
   useFocusEffect(
     useCallback(() => {
-      (async () => {
-        const state = await refreshFromServer();
-        if (state) {
-          hydrateStore(state);
-          if (user?.id) getOrCreateUser(user.id);
-        }
-        const m = getMarketById(id || "");
-        if (m) void refreshMarket(m.marketId);
-      })();
-    }, [id, user?.id])
+      refreshMarketData();
+      const interval = setInterval(refreshMarketData, 1000);
+      return () => clearInterval(interval);
+    }, [refreshMarketData])
   );
 
   const market = getMarketById(id || "");

@@ -98,7 +98,21 @@ export function hydrateStore(state: PersistedState): void {
   users = state.users ?? [];
   groups = state.groups ?? [];
   markets = state.markets ?? [];
-  balanceCache = state.balanceCache ?? {};
+  const raw = state.balanceCache ?? {};
+  // Migrate legacy balanceCache (userId -> number) to per-group (userId|groupId -> number)
+  balanceCache = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (k.includes("|")) {
+      balanceCache[k] = v;
+    } else {
+      const userId = k;
+      const userGroups = (state.groups ?? []).filter((g) => g.members?.includes(userId));
+      const perGroup = userGroups.length > 0 ? v / userGroups.length : v;
+      for (const g of userGroups) {
+        balanceCache[balanceKey(userId, g.id)] = Math.round(perGroup * 100) / 100;
+      }
+    }
+  }
   marketIdCounter = state.marketIdCounter ?? Math.floor(Date.now() / 1000);
   notifyStoreChange();
 }
@@ -143,18 +157,29 @@ export function getUserById(id: string): User | undefined {
   return users.find((u) => u.id === id);
 }
 
-// --- Balance (from chain, cached) ---
-export function setBalanceCache(userId: string, balance: number): void {
-  balanceCache[userId] = balance;
+// --- Balance (from chain, cached) - per user per group ---
+function balanceKey(userId: string, groupId: string): string {
+  return `${userId}|${groupId}`;
 }
 
-export function getBalanceFromCache(userId: string): number {
-  return balanceCache[userId] ?? 0;
+export function setBalanceCache(userId: string, balance: number, groupId?: string): void {
+  if (!groupId) return;
+  balanceCache[balanceKey(userId, groupId)] = balance;
 }
 
-export async function refreshBalance(userId: string): Promise<number> {
+function addToBalance(userId: string, groupId: string, delta: number): void {
+  const key = balanceKey(userId, groupId);
+  balanceCache[key] = (balanceCache[key] ?? 0) + delta;
+}
+
+export function getBalanceFromCache(userId: string, groupId?: string): number {
+  if (groupId) return balanceCache[balanceKey(userId, groupId)] ?? 0;
+  return 0;
+}
+
+export async function refreshBalance(userId: string, groupId?: string): Promise<number> {
   const balance = await api.getBalance(userId);
-  balanceCache[userId] = balance;
+  if (groupId) balanceCache[balanceKey(userId, groupId)] = balance;
   return balance;
 }
 
@@ -170,8 +195,8 @@ export function createGroup(name: string, baseBuyIn: number, creatorId: string):
     members: [creatorId],
   };
   groups.push(group);
-  // Creator gets the buy-in amount
-  setBalanceCache(creatorId, (balanceCache[creatorId] ?? 0) + baseBuyIn);
+  // Creator gets the buy-in amount (per-group balance)
+  addToBalance(creatorId, id, baseBuyIn);
   void persist();
   return group;
 }
@@ -180,8 +205,8 @@ export function joinGroup(joinCode: string, userId: string): Group | null {
   const group = groups.find((g) => g.joinCode.toUpperCase() === joinCode.toUpperCase());
   if (!group || group.members.includes(userId)) return null;
   group.members.push(userId);
-  // New member gets the buy-in amount
-  setBalanceCache(userId, (balanceCache[userId] ?? 0) + group.baseBuyIn);
+  // New member gets the buy-in amount (per-group balance)
+  addToBalance(userId, group.id, group.baseBuyIn);
   void persist();
   return group;
 }
@@ -194,12 +219,16 @@ export function getGroupsByUser(userId: string): Group[] {
   return groups.filter((g) => g.members.includes(userId));
 }
 
-export function getUserBalance(userId: string, _groupId?: string): number {
-  return balanceCache[userId] ?? 0;
+export function getUserBalance(userId: string, groupId?: string): number {
+  if (!groupId) return 0;
+  return balanceCache[balanceKey(userId, groupId)] ?? 0;
 }
 
 export function getTotalBalance(userId: string): number {
-  return balanceCache[userId] ?? 0;
+  return getGroupsByUser(userId).reduce(
+    (sum, g) => sum + (balanceCache[balanceKey(userId, g.id)] ?? 0),
+    0
+  );
 }
 
 export function getGroupLeaderboard(
@@ -208,7 +237,7 @@ export function getGroupLeaderboard(
   const group = getGroupById(groupId);
   if (!group) return [];
   return group.members
-    .map((userId) => ({ userId, balance: balanceCache[userId] ?? 0 }))
+    .map((userId) => ({ userId, balance: balanceCache[balanceKey(userId, groupId)] ?? 0 }))
     .sort((a, b) => b.balance - a.balance);
 }
 
@@ -290,8 +319,8 @@ export async function createMarket(
   market.yesPool = yesAmount; // $ in YES pool
   market.noPool = noAmount;   // $ in NO pool
   markets.push(market);
-  // Deduct stake from creator's balance
-  setBalanceCache(email, (balanceCache[email] ?? 0) - totalStake);
+  // Deduct stake from creator's balance (per-group)
+  addToBalance(email, groupId, -totalStake);
   await persist();
   return market;
 }
@@ -363,7 +392,8 @@ export async function addToPool(
     : markets.find((m) => m.marketId === marketIdOrId);
   if (!market || amount <= 0) return false;
   const cost = Math.round(amount * 100) / 100;
-  if (cost > (balanceCache[userId] ?? 0)) return false;
+  const userBal = balanceCache[balanceKey(userId, market.groupId)] ?? 0;
+  if (cost > userBal) return false;
   try {
     await api.buyShares(userId, market.marketId, side === "yes", cost, 50);
     const pos = market.positions[userId] ?? { yes: 0, no: 0 };
@@ -375,7 +405,7 @@ export async function addToPool(
       market.noPool += cost;
     }
     market.positions[userId] = pos;
-    setBalanceCache(userId, (balanceCache[userId] ?? 0) - cost);
+    addToBalance(userId, market.groupId, -cost);
     appendTradeToMarket(market, userId, side, cost);
     void persist();
     void recordTradeOnChain(market.marketId, side, cost).catch(() => {});
@@ -404,7 +434,7 @@ export async function resolveMarket(
         const stake = outcome === "YES" ? pos.yes : pos.no;
         if (stake > 0 && multiplier > 0) {
           const payout = Math.round(stake * multiplier * 100) / 100;
-          setBalanceCache(userId, (balanceCache[userId] ?? 0) + payout);
+          addToBalance(userId, market.groupId, payout);
         }
       }
       notifyStoreChange();
